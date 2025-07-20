@@ -73,7 +73,9 @@ CE_INSTRUCTIONS = [
     # fmt: on
 ]
 
+# turn the list of instructions into a string for the parser
 instructions = MOS_INSTRUCTIONS + CMOS_INSTRUCTIONS + CE_INSTRUCTIONS
+instructions_def = " | ".join(['"' + instr + '"i' for instr in instructions])
 
 # assembler directives from the original MOS cross-assembler
 # https://www.pagetable.com/docs/cbmasm/MCS6500%20Microcomputer%20Family%20Cross%20Assembler%20Manual.pdf
@@ -94,9 +96,8 @@ CA65_DIRECTIVES = { 'org', 'set', 'segment', 'zeropage', 'data', 'code', 'bss', 
 # tab is used to set column the spacing 
 ATARI_DIRECTIVES = { 'title', 'tab' }
 
-instructions_def = " | ".join(['"' + instr + '"i' for instr in instructions])
-
 directives = MOS_DIRECTIVES.union(CA65_DIRECTIVES).union(ATARI_DIRECTIVES)
+directives_def = " | ".join(['"' + dirct + '"i' for dirct in directives])
 
 def main():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
@@ -152,7 +153,6 @@ def main():
         # fmt: off
         r"""
         %import common.NUMBER
-        %import common.HEXDIGIT
         %import common.LETTER
         %import common.WS_INLINE -> _WS
         %ignore _WS
@@ -180,26 +180,39 @@ def main():
 
         comment: INDENT* ";" COMMENT_TEXT?
 
-        ?operand: REGISTER | (/#/? /[<>]/? expr)
-        ?expr: OP? LITERAL (OP expr)? # OP in front for the .LOW. and .HIGH.
-            | /\(/ expr /\)/ -> expr
+        ?operand: REGISTER | (/#/? /[<>]/? expr) # CA65 uses <> for shifts
+        ?expr: term (OP term)*  # handles A.AND.B, C+D, etc...
+          | OP term             # handles .LOW.A, .HIGH.B, etc.
+        ?term: LITERAL
+          | /\(/ expr /\)/   // Parenthesized expressions
+
+ #       ?expr: OP? LITERAL (OP expr)? # OP in front for the .LOW. and .HIGH.
+ #           | /\(/ expr /\)/ -> expr
 
         # terminals
         LINE_NUMBER: NUMBER
         COMMENT_TEXT: /[^\n]+/
+
         INSTR: """ + (instructions_def if args.colonless_labels else 'IDENT') + r"""
         REGISTER: "A"i | "X"i | "Y"i # FIXME: add Z if in CE mode
 
-        # a literal is a number (in hex, binary, or octal), a label name, an offset from a label, ASCII values, or the *, which is the current location
+        DIRECTIVES: """ + (directives_def) + r"""
+
+        # a literal is a:
+        #  - number (in decimal, hex, octal or binary)
+        #  - a label name
+        #  - ASCII strings of characters
+        #  - or the *, which is the current location in memory
         # the MOS cross-compiler allows -ve values, so this version allows signed values in general
         # the Atari OS uses some signed hex, all examples have the sign on the left of the type ($/%/@) so this is assumed to be the only syntax
         # ... it also has single-character ASCII literals which have only the leading quote
         LITERAL: ["+"|"-"]? NUMBER 
-          | ["+"|"-"]? /\$/ [HEXDIGIT+] 
+          | ["+"|"-"]? /\$/ /[0-9a-fA-F]+/
           | ["+"|"-"]? /%/ /[01]+/ 
           | ["+"|"-"]? /@/ /[01234567]+/ 
           | /'.'/ 
           | /'/ LETTER 
+          | /'/ (LETTER)* /'/ 
           | LABEL 
           | LABEL_REL 
           | /\*/
@@ -208,19 +221,20 @@ def main():
         LABEL: IDENT | "@" /[a-zA-Z0-9_\?\.]+/
         LABEL_REL: /:[\+\-]+/
 
-        # the MOS cross-compilers allows . and ? in identifiers
-        IDENT: /[a-zA-Z_][a-zA-Z0-9_\?\.]*/
-
+        # put OP above IDENT
         # the MOS cross-compiler has the .LOW. and .HIGH. operations
         # As65 has .HI. and .BANK.
-        OP: "+" | "-" | "*" | "/" | "|" | "&" | "^" | "," | ".LOW." | ".HIGH." | ".HI." | ".BANK." | ".AND." | ".OR."
+        OP: ".LOW." | ".HIGH." | ".HI." | ".BANK." | ".AND." | ".OR." | "+" | "-" | "*" | "/" | "|" | "&" | "^" | ","
+
+        # the MOS cross-compilers allows . and ? in identifiers
+        IDENT: "."? /[a-zA-Z_][a-zA-Z0-9_\?]*/
 
         INDENT: /[ ]+/
     """
         # fmt: on
     )
 
-    grammar = Lark(definition)#, parser="lalr")
+    grammar = Lark(definition) #, parser="lalr")
 
     if args.recursive:
         for root, _, files in os.walk(args.infile):
@@ -239,12 +253,10 @@ def main():
             args.lowercase_mnemonics,
         )
 
-
 class Version(Action):
     def __call__(self, parser, namespace, values, option_string):
         print('nice65 version', metadata.version("nice65"), file=sys.stderr)
         parser.exit()
-
 
 def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_mnemonics):
     if infile == "-":
@@ -315,14 +327,17 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
                 statement = child.children[0]
 
                 if statement.data == "directive":
-                    name = statement.children[0].strip()
-                    string += (
-                        (padding if name not in CA65_DIRECTIVES else '')
-                        + "."
-                        + name.lower()
-                        + " "
-                        + " ".join(statement.children[1:])
-                    )
+                    if statement.children[0].data == "expr":
+                        name = statement.children[0]
+                    else:
+                        name = statement.children[0].strip()
+                        string += (
+                            (padding if name not in CA65_DIRECTIVES else '')
+                            + "."
+                            + name.lower()
+                            + " "
+                            + " ".join(statement.children[1:])
+                        )
                 elif statement.data == "macro_start":
                     name = statement.children[0].strip()
                     string += ".macro ".ljust(8, ' ') + name + " " + ", ".join(map(str.strip, statement.children[1:]))
