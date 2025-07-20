@@ -22,10 +22,12 @@ fill:
    ; save registers
    push_all
 
+    *=$600
+
 @start: ldax #0, #0
 @again: sta     $00   ,x      ;Yeah, we can use stz, but I just need some code to test nice65!
-   inx
-bne @again  ; Repeat
+10    inx
+   bne @again  ; Repeat
 
   ; Do unnecessary throwaway stuff to test expressions
   ;
