@@ -287,6 +287,7 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
             if child.data == "linenum":
                 number = child.children[0].strip()
                 string += number + " "
+
             elif child.data == "comment":
                 is_tail = bool(len(string))
                 if is_tail:
@@ -304,6 +305,7 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
                     else:
                         padding = ''
                     string += padding + '; ' + sentence
+
             elif child.data == "labeldef":
                 if child.children:
                     # Named label definition
@@ -317,6 +319,7 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
                 else:
                     padding = ""
                 string += padding + label + ":"
+
             elif child.data == "statement":
                 pad_count = 8 - len(string)
                 if pad_count > 0:
@@ -327,9 +330,6 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
                 statement = child.children[0]
 
                 if statement.data == "directive":
-                    if statement.children[0].data == "expr":
-                        name = statement.children[0]
-                    else:
                         name = statement.children[0].strip()
                         string += (
                             (padding if name not in CA65_DIRECTIVES else '')
@@ -338,11 +338,13 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
                             + " "
                             + " ".join(statement.children[1:])
                         )
+
                 elif statement.data == "macro_start":
                     name = statement.children[0].strip()
                     string += ".macro ".ljust(8, ' ') + name + " " + ", ".join(map(str.strip, statement.children[1:]))
                 elif statement.data == "macro_end":
                     string += ".endmacro"
+
                 elif statement.data == "asm_statement":
                     mnemonic = statement.children[0]
                     string += padding + (
@@ -358,12 +360,15 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
                         string += " " + ", ".join(args)
                 else:
                     raise NotImplementedError("Unknown statement type: " + child.children[0].data)
+                
             elif child.data == "numeric_var":
                 name, cmd = child.children
                 string = name.strip().ljust(8, ' ') + '.' + ' '.join(map(str.strip, cmd.children))
+
             elif child.data == "constant_def":
                 name, assign, value = child.children
                 string += name.strip() + " " + assign.strip() + " " + value.strip()
+
             else:
                 raise NotImplementedError("Unknown child in line: " + child.data)
 
