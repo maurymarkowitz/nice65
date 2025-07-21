@@ -198,11 +198,12 @@ def main():
 
         DIRECTIVES: """ + (directives_def) + r"""
 
-        # a literal is a:
-        #  - number (in decimal, hex, octal or binary)
+        # a literal can be:
+        #  - a number in decimal, hex, octal or binary
         #  - a label name
-        #  - ASCII strings of characters
+        #  - an ASCII strings of characters
         #  - or the *, which is the current location in memory
+        #
         # the MOS cross-compiler allows -ve values, so this version allows signed values in general
         # the Atari OS uses some signed hex, all examples have the sign on the left of the type ($/%/@) so this is assumed to be the only syntax
         # ... it also has single-character ASCII literals which have only the leading quote
@@ -273,6 +274,8 @@ def fix(grammar, infile, outfile, modify_in_place, colonless_labels, lowercase_m
                     return
 
     tree = grammar.parse(content)
+
+    #print(tree.pretty)
 
     if modify_in_place:
         outfile = open(infile, "w")
